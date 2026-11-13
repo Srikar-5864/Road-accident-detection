@@ -1,48 +1,38 @@
-# AI-Powered Road Accident Detection & Emergency Alert System (MVP)
+# RoadAlert - AI-Powered Road Accident Reporting & Alert System
 
-FastAPI + SQLite backend, React frontend (no build step), optional PyTorch image classifier, OpenStreetMap/Leaflet maps.
+FastAPI + SQLite backend, React frontend (no build step), CLIP/ResNet image check, OpenStreetMap maps. English, Hindi and Kannada for citizens.
 
-## Run
+## 1. Run on your laptop
 ```bash
 cd backend
-python -m venv venv && source venv/bin/activate      # Windows: venv\Scripts\activate
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1          # Windows PowerShell  (Mac/Linux: source .venv/bin/activate)
 pip install -r requirements.txt
-uvicorn main:app --reload
+pip install torch torchvision transformers   # only needed for the AI image check
+python -m uvicorn main:app --reload
+python seed_demo.py                   # optional, in a second terminal: adds demo incidents
 ```
-Open http://localhost:8000 (internet needed for the React/Leaflet CDN scripts and map tiles).
-Interactive API docs: http://localhost:8000/docs
+Open http://localhost:8000 (internet needed for map tiles and the React/Leaflet scripts). API docs: /docs.
+Admin login: `admin@example.com` / `admin123` (change with `ADMIN_EMAIL` / `ADMIN_PASSWORD` before first run).
 
-**Admin login (change it!):** `admin@example.com` / `admin123`, or set `ADMIN_EMAIL` / `ADMIN_PASSWORD` env vars before first run.
+## 2. User guide
+**Citizens** - Home, Report (description, severity, location by GPS or map click, optional photo), Track (by incident ID), Map (incidents + hotspots), Safety (112/108/100 and first-aid steps). Register on the **Account** tab to keep reports under *My reports*. Use the language box (top right) for English / हिन्दी / ಕನ್ನಡ.
+**Admin** - Account tab: charts, search, CSV export, create police/hospital accounts, all statuses (incl. Duplicate/Reject), notification log and retry.
+**Police / hospital** - log in on the Account tab: a console of open incidents, **priority cases first**, photo, directions link, one-tap *Confirm / Responding / Resolved* with a note. They cannot set Duplicate/Reject.
+**Priority** = open incident that is severity *Critical* or that the AI labels accident-related.
+**AI feedback** - on each card staff press *AI was right / wrong*; the console then shows precision, recall and false-positive rate from real reviews (use these numbers in your report).
 
-## Features (per project plan)
-Home page with live stats · public incident map with hotspot areas · safety guide & emergency numbers · admin dashboard with charts, search and photo thumbnails.
+## 3. AI image check
+Without torch the app still works ("AI unavailable - manual review"). With torch + transformers it uses zero-shot CLIP: "accident-related" only at >=80% accident score, 50-80% = "uncertain - needs human review" (tune in `backend/ai.py`). To use your own trained model see `backend/train.py`; put the result in `backend/models/accident_classifier.pt`. AI output is preliminary and never replaces human verification.
 
-Report form · browser geolocation + click-on-map fallback · image upload (validated type/size) · AI classification (optional) · incident IDs (INC-1001…) · tracking with status history · admin dashboard (filter, status changes incl. Duplicate/Rejected) · mock notifications with recorded delivery status and retry · privacy (public tracking shows rounded location, no reporter info).
+## 4. Put it online (live link)
+1. Push this folder to a GitHub repository.
+2. On render.com: New > Blueprint (or Web Service > Docker) and select the repo. `render.yaml` and `Dockerfile` are included; `ADMIN_PASSWORD` is generated (see the service's Environment tab).
+3. Open the URL Render gives you; log in as `admin@example.com` with that password.
+Notes: the free tier has no persistent disk (data resets on restart) and too little memory for torch, so the live demo runs with **AI unavailable**; use the laptop version to demo the AI. Run `python seed_demo.py` locally to show a populated map. Check the host's current free-tier limits.
 
-## AI model
-Without a trained model the app still works: image reports are saved and flagged "AI unavailable - manual review".
-To enable it:
-```bash
-pip install torch torchvision
-# arrange data/train/{accident,no_accident}/ and data/test/{accident,no_accident}/ (e.g. a Kaggle accident dataset)
-python train.py --data data --epochs 5     # prints precision, recall, false-positive rate on the test set
-```
-This saves `backend/models/accident_classifier.pt`, loaded automatically on the next server start.
-AI output is preliminary only; a prediction never counts as a verified emergency.
+## 5. Tests
+`pip install pytest` then `python -m pytest tests` (12 tests: reports, validation, images, access control, statuses, notifications, privacy, priority, AI feedback, My reports, CSV).
 
-## Notifications
-Mock only: alerts are printed to the server console and stored in the `notifications` table. Set
-`NOTIFY_RECIPIENTS="a@test.com,fail@test.com"` - any address containing `fail` simulates a failed delivery so you can demo the failure/retry flow. The UI never claims emergency services were contacted.
-
-## Tests
-```bash
-pip install pytest && python -m pytest tests
-```
-Covers: valid report, invalid input, valid/invalid image, AI unavailable, access control, status updates, notification failure.
-
-## Layout
-`backend/main.py` API + DB · `backend/ai.py` classifier wrapper · `backend/train.py` training/evaluation · `frontend/index.html` UI · `tests/` pytest.
-
-## Known MVP limits
-Login tokens are in-memory (reset on restart); SQLite; no real email/SMS (add SMTP in `notify()`); no hotspot analytics yet (coordinates are stored for it).
-Use the project's safety note: in a real emergency contact local emergency services directly.
+## Safety notes & limits
+Alerts are mock only (console + `notifications` table; an address containing "fail" simulates failure). The app never claims emergency services were contacted. Public tracking/map show rounded locations only. Login tokens are in memory (reset on restart); passwords are hashed (PBKDF2). Hindi/Kannada text should be reviewed by a native speaker before real use. For real deployment add HTTPS, rate limiting and a persistent database.

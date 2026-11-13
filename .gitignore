@@ -1,0 +1,9 @@
+__pycache__/
+*.db
+backend/uploads/
+venv/
+.venv/
+.pytest_cache/
+backend/models/*.pt
+backend/data/
+backend/raw/

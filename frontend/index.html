@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadAlert - Road Accident Reporting</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;600&family=Noto+Sans+Kannada:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#F3F7F5;--ink:#12302C;--mut:#3C5A55;--pri:#0F766E;--tint:#D5ECE6;--line:#C9DDD7}
+body{font-family:Inter,"Noto Sans Devanagari","Noto Sans Kannada",system-ui,sans-serif;margin:0;background:var(--bg);color:var(--ink)}
+header{padding:14px 20px;display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between}
+.brand{font-weight:700;font-size:21px;color:var(--pri)}
+nav{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+nav button{border:0;background:transparent;padding:8px 14px;border-radius:20px}
+nav button.on{background:var(--pri);color:#fff}
+nav select{width:auto;margin:0;padding:6px}
+main{max-width:920px;margin:8px auto 40px;padding:0 14px}
+.card{background:#fff;border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 4px 18px #0B4F4814}
+.warn{background:#FFF4D6;color:#5A4300;padding:10px 14px;border-radius:12px;margin-bottom:14px}
+input,textarea,select{width:100%;box-sizing:border-box;padding:10px;margin:4px 0 10px;border:1px solid var(--line);border-radius:10px;font:inherit}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 14px}
+button.p{background:var(--pri);color:#fff;border:0}
+button:disabled{opacity:.5;cursor:default}
+.err{color:#B3261E}.ok{color:#1B7F3B}h1,h2,h3{margin-top:0}
+.chip{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;background:var(--tint);color:#0B4F48}
+.chip.hi{background:#FDE0DD;color:#8C1D14;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{border-bottom:1px solid #E3EEEA;padding:6px;text-align:left}
+#map{height:260px;border-radius:12px;margin-bottom:8px}
+.grid{display:flex;gap:12px;flex-wrap:wrap}.grid>*{flex:1;min-width:130px}
+.hero{display:flex;gap:28px;align-items:center;flex-wrap:wrap}.hero>div:first-child{flex:1;min-width:260px}
+.fake{position:relative;width:320px;max-width:100%;height:230px;border-radius:16px;background:#D6E9E3 linear-gradient(#ffffff99 1px,transparent 1px),linear-gradient(90deg,#ffffff99 1px,transparent 1px);background-size:40px 40px}
+.fake i{position:absolute;width:18px;height:18px;border-radius:50%;border:3px solid #fff}
+</style></head><body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="text/babel">
+const {useState,useEffect,useRef}=React;
+const J={"Content-Type":"application/json"};
+const api=async(p,o={},tok)=>{const h={...(o.headers||{})};if(tok)h.Authorization="Bearer "+tok;
+ const r=await fetch("/api"+p,{...o,headers:h});const d=await r.json().catch(()=>({}));
+ if(!r.ok)throw new Error(typeof d.detail==="string"?d.detail:JSON.stringify(d.detail||"Request failed"));return d;};
+const osm=(a,b)=>`https://www.openstreetmap.org/?mlat=${a}&mlon=${b}#map=17/${a}/${b}`;
+const COL={Reported:"#D32F2F",Verified:"#B45309",Responding:"#1976D2",Resolved:"#2E7D32"};
+const ALL=["Reported","Verified","Responding","Resolved","Duplicate","Rejected"];
+
+/* ---------- translations (UI for citizens; staff consoles stay in English) ---------- */
+const I={
+en:{home:"Home",report:"Report",track:"Track",map:"Map",safety:"Safety",account:"Account",hero:"Report road accidents faster",
+ heroSub:"Describe what happened, drop a pin and add a photo. Every report is reviewed and you can follow its progress.",
+ emergency:"Emergency? Call 112 first. Do not wait for this app.",reportBtn:"Report an accident",trackBtn:"Track a report",
+ total:"Total reports",active:"Active",resolved:"Resolved",last24:"Last 24 hours",description:"Description",severity:"Severity estimate",
+ useLoc:"Use my location",clickMap:"or click the map",photo:"Photo (optional)",submit:"Submit report",saved:"Report saved",
+ signin:"Sign in",signup:"Sign up",confirmPassword:"Confirm password",
+ signinNote:"Police, hospital and admin staff sign in here with the account issued by your administrator.",
+ signupNote:"Sign up creates a citizen account. Police and hospital accounts are created only by an administrator.",
+ pwMismatch:"Passwords do not match.",
+ name:"Name",email:"Email",password:"Password",myReports:"My reports",logout:"Logout",none:"Nothing here yet.",
+ loginHint:"Log in first to keep this report under My reports.",how:"How it works",s1:"Describe",s2:"Add a photo",s3:"Track",
+ s1d:"Say what happened and drop a pin.",s2d:"A preliminary AI check helps reviewers.",s3d:"Follow status from Reported to Resolved.",
+ trackTitle:"Track a report",mapTitle:"Incident map",safeTitle:"If you witness an accident",
+ w1:"Stay safe and switch on hazard lights.",w2:"Call 112 and give the exact location.",w3:"Do not move seriously injured people unless in danger.",
+ w4:"Press firmly on heavy bleeding with a clean cloth.",w5:"Then report it here.",
+ st_Reported:"Reported",st_Verified:"Verified",st_Responding:"Responding",st_Resolved:"Resolved",st_Duplicate:"Duplicate",st_Rejected:"Rejected"},
+hi:{home:"होम",report:"रिपोर्ट करें",track:"ट्रैक करें",map:"नक्शा",safety:"सुरक्षा",account:"खाता",hero:"सड़क दुर्घटनाओं की रिपोर्ट तेज़ी से करें",
+ heroSub:"क्या हुआ बताएँ, नक्शे पर स्थान चुनें और फोटो जोड़ें। हर रिपोर्ट की समीक्षा होती है और आप उसकी प्रगति देख सकते हैं।",
+ emergency:"आपातकाल? पहले 112 पर कॉल करें। इस ऐप का इंतज़ार न करें।",reportBtn:"दुर्घटना की रिपोर्ट करें",trackBtn:"रिपोर्ट ट्रैक करें",
+ total:"कुल रिपोर्ट",active:"सक्रिय",resolved:"हल हुई",last24:"पिछले 24 घंटे",description:"विवरण",severity:"गंभीरता का अनुमान",
+ useLoc:"मेरा स्थान उपयोग करें",clickMap:"या नक्शे पर क्लिक करें",photo:"फोटो (वैकल्पिक)",submit:"रिपोर्ट जमा करें",saved:"रिपोर्ट सहेजी गई",
+ signin:"साइन इन",signup:"साइन अप",confirmPassword:"पासवर्ड की पुष्टि करें",
+ signinNote:"पुलिस, अस्पताल और व्यवस्थापक कर्मचारी यहाँ अपने व्यवस्थापक द्वारा दिए गए खाते से साइन इन करें।",
+ signupNote:"साइन अप से नागरिक खाता बनता है। पुलिस और अस्पताल के खाते केवल व्यवस्थापक द्वारा बनाए जाते हैं।",
+ pwMismatch:"पासवर्ड मेल नहीं खाते।",
+ name:"नाम",email:"ईमेल",password:"पासवर्ड",myReports:"मेरी रिपोर्ट",logout:"लॉगआउट",none:"अभी कुछ नहीं है।",
+ loginHint:"इस रिपोर्ट को \"मेरी रिपोर्ट\" में रखने के लिए पहले लॉगिन करें।",how:"यह कैसे काम करता है",s1:"विवरण दें",s2:"फोटो जोड़ें",s3:"ट्रैक करें",
+ s1d:"क्या हुआ बताएँ और स्थान चुनें।",s2d:"प्रारंभिक AI जाँच समीक्षकों की मदद करती है।",s3d:"स्थिति को दर्ज से हल तक देखें।",
+ trackTitle:"रिपोर्ट ट्रैक करें",mapTitle:"घटना नक्शा",safeTitle:"यदि आप दुर्घटना देखें",
+ w1:"सुरक्षित रहें और हैज़र्ड लाइट चालू करें।",w2:"112 पर कॉल करें और सही स्थान बताएँ।",w3:"खतरा न हो तो गंभीर घायलों को न हिलाएँ।",
+ w4:"भारी खून बहने पर साफ कपड़े से कसकर दबाएँ।",w5:"फिर यहाँ रिपोर्ट करें।",
+ st_Reported:"दर्ज",st_Verified:"सत्यापित",st_Responding:"कार्रवाई जारी",st_Resolved:"हल हुई",st_Duplicate:"दोहराई गई",st_Rejected:"अस्वीकृत"},
+kn:{home:"ಮುಖಪುಟ",report:"ವರದಿ ಮಾಡಿ",track:"ಟ್ರ್ಯಾಕ್ ಮಾಡಿ",map:"ನಕ್ಷೆ",safety:"ಸುರಕ್ಷತೆ",account:"ಖಾತೆ",hero:"ರಸ್ತೆ ಅಪಘಾತಗಳನ್ನು ವೇಗವಾಗಿ ವರದಿ ಮಾಡಿ",
+ heroSub:"ಏನಾಯಿತು ಎಂದು ತಿಳಿಸಿ, ನಕ್ಷೆಯಲ್ಲಿ ಸ್ಥಳ ಗುರುತಿಸಿ ಮತ್ತು ಫೋಟೋ ಸೇರಿಸಿ. ಪ್ರತಿಯೊಂದು ವರದಿಯನ್ನು ಪರಿಶೀಲಿಸಲಾಗುತ್ತದೆ, ಅದರ ಪ್ರಗತಿಯನ್ನು ನೀವು ನೋಡಬಹುದು.",
+ emergency:"ತುರ್ತು ಪರಿಸ್ಥಿತಿಯೇ? ಮೊದಲು 112 ಗೆ ಕರೆ ಮಾಡಿ. ಈ ಆ್ಯಪ್‌ಗಾಗಿ ಕಾಯಬೇಡಿ.",reportBtn:"ಅಪಘಾತ ವರದಿ ಮಾಡಿ",trackBtn:"ವರದಿಯನ್ನು ಟ್ರ್ಯಾಕ್ ಮಾಡಿ",
+ total:"ಒಟ್ಟು ವರದಿಗಳು",active:"ಸಕ್ರಿಯ",resolved:"ಪರಿಹರಿಸಲಾಗಿದೆ",last24:"ಕಳೆದ 24 ಗಂಟೆಗಳು",description:"ವಿವರಣೆ",severity:"ತೀವ್ರತೆಯ ಅಂದಾಜು",
+ useLoc:"ನನ್ನ ಸ್ಥಳ ಬಳಸಿ",clickMap:"ಅಥವಾ ನಕ್ಷೆಯ ಮೇಲೆ ಕ್ಲಿಕ್ ಮಾಡಿ",photo:"ಫೋಟೋ (ಐಚ್ಛಿಕ)",submit:"ವರದಿ ಸಲ್ಲಿಸಿ",saved:"ವರದಿ ಉಳಿಸಲಾಗಿದೆ",
+ signin:"ಸೈನ್ ಇನ್",signup:"ಸೈನ್ ಅಪ್",confirmPassword:"ಪಾಸ್‌ವರ್ಡ್ ದೃಢೀಕರಿಸಿ",
+ signinNote:"ಪೊಲೀಸ್, ಆಸ್ಪತ್ರೆ ಮತ್ತು ಆಡಳಿತ ಸಿಬ್ಬಂದಿ ತಮ್ಮ ನಿರ್ವಾಹಕರು ನೀಡಿದ ಖಾತೆಯೊಂದಿಗೆ ಇಲ್ಲಿ ಸೈನ್ ಇನ್ ಮಾಡಿ.",
+ signupNote:"ಸೈನ್ ಅಪ್ ನಾಗರಿಕ ಖಾತೆಯನ್ನು ರಚಿಸುತ್ತದೆ. ಪೊಲೀಸ್ ಮತ್ತು ಆಸ್ಪತ್ರೆ ಖಾತೆಗಳನ್ನು ನಿರ್ವಾಹಕರು ಮಾತ್ರ ರಚಿಸುತ್ತಾರೆ.",
+ pwMismatch:"ಪಾಸ್‌ವರ್ಡ್‌ಗಳು ಹೊಂದಿಕೆಯಾಗುತ್ತಿಲ್ಲ.",
+ name:"ಹೆಸರು",email:"ಇಮೇಲ್",password:"ಪಾಸ್‌ವರ್ಡ್",myReports:"ನನ್ನ ವರದಿಗಳು",logout:"ಲಾಗ್ ಔಟ್",none:"ಇನ್ನೂ ಏನೂ ಇಲ್ಲ.",
+ loginHint:"ಈ ವರದಿಯನ್ನು \"ನನ್ನ ವರದಿಗಳು\" ನಲ್ಲಿ ಇಡಲು ಮೊದಲು ಲಾಗಿನ್ ಮಾಡಿ.",how:"ಇದು ಹೇಗೆ ಕೆಲಸ ಮಾಡುತ್ತದೆ",s1:"ವಿವರಿಸಿ",s2:"ಫೋಟೋ ಸೇರಿಸಿ",s3:"ಟ್ರ್ಯಾಕ್ ಮಾಡಿ",
+ s1d:"ಏನಾಯಿತು ಎಂದು ಹೇಳಿ ಮತ್ತು ಸ್ಥಳ ಗುರುತಿಸಿ.",s2d:"ಪ್ರಾಥಮಿಕ AI ಪರಿಶೀಲನೆ ಪರಿಶೀಲಕರಿಗೆ ಸಹಾಯ ಮಾಡುತ್ತದೆ.",s3d:"ವರದಿಯಾಗಿದೆಯಿಂದ ಪರಿಹಾರದವರೆಗೆ ಸ್ಥಿತಿಯನ್ನು ನೋಡಿ.",
+ trackTitle:"ವರದಿಯನ್ನು ಟ್ರ್ಯಾಕ್ ಮಾಡಿ",mapTitle:"ಘಟನೆ ನಕ್ಷೆ",safeTitle:"ನೀವು ಅಪಘಾತ ಕಂಡರೆ",
+ w1:"ಸುರಕ್ಷಿತವಾಗಿರಿ ಮತ್ತು ಹಜಾರ್ಡ್ ಲೈಟ್ ಆನ್ ಮಾಡಿ.",w2:"112 ಗೆ ಕರೆ ಮಾಡಿ ಮತ್ತು ನಿಖರವಾದ ಸ್ಥಳ ತಿಳಿಸಿ.",w3:"ಅಪಾಯವಿಲ್ಲದಿದ್ದರೆ ಗಂಭೀರವಾಗಿ ಗಾಯಗೊಂಡವರನ್ನು ಸ್ಥಳಾಂತರಿಸಬೇಡಿ.",
+ w4:"ಹೆಚ್ಚು ರಕ್ತಸ್ರಾವವಾದರೆ ಶುದ್ಧ ಬಟ್ಟೆಯಿಂದ ಗಟ್ಟಿಯಾಗಿ ಒತ್ತಿ.",w5:"ನಂತರ ಇಲ್ಲಿ ವರದಿ ಮಾಡಿ.",
+ st_Reported:"ವರದಿಯಾಗಿದೆ",st_Verified:"ದೃಢೀಕರಿಸಲಾಗಿದೆ",st_Responding:"ಸ್ಪಂದಿಸಲಾಗುತ್ತಿದೆ",st_Resolved:"ಪರಿಹರಿಸಲಾಗಿದೆ",st_Duplicate:"ನಕಲು",st_Rejected:"ತಿರಸ್ಕರಿಸಲಾಗಿದೆ"}};
+let LANG="en";
+const t=k=>(I[LANG]&&I[LANG][k])||I.en[k]||k;
+const ts=s=>(I[LANG]&&I[LANG]["st_"+s])||s;
+
+/* ---------- small helpers ---------- */
+function Bars({data}){const mx=Math.max(1,...data.map(d=>d.v));
+ return <div>{data.map(d=><div key={d.k} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,margin:"3px 0"}}>
+  <span style={{width:80}}>{d.k}</span><div style={{background:"#0F766E",height:14,width:(d.v/mx*55)+"%",minWidth:d.v?4:0,borderRadius:3}}/><span>{d.v}</span></div>)}</div>;}
+function Thumb({id,tok}){const [u,setU]=useState(null);
+ useEffect(()=>{let url;fetch(`/api/incidents/${id}/image`,{headers:{Authorization:"Bearer "+tok}}).then(r=>r.ok?r.blob():null)
+  .then(b=>{if(b){url=URL.createObjectURL(b);setU(url)}}).catch(()=>{});return()=>{if(url)URL.revokeObjectURL(url)}},[id]);
+ return u?<img src={u} style={{width:56,height:56,objectFit:"cover",borderRadius:8}}/>:null;}
+const Stat=({n,l})=><div className="card" style={{textAlign:"center",marginBottom:0}}><div style={{fontSize:30,fontWeight:700,color:"#0F766E"}}>{n==null?"-":n}</div><small>{l}</small></div>;
+
+/* ---------- public pages ---------- */
+function Home({go}){
+ const [s,setS]=useState(null);
+ useEffect(()=>{api("/public/stats").then(setS).catch(()=>{})},[]);
+ const step=(n,a,b)=><div className="card" style={{marginBottom:0}}><b style={{color:"#0F766E"}}>{n}</b><div style={{fontWeight:600,margin:"6px 0"}}>{t(a)}</div><small>{t(b)}</small></div>;
+ return <div>
+  <div className="warn"><b>{t("emergency")}</b></div>
+  <div className="card hero"><div><span className="chip">RoadAlert</span><h1 style={{fontSize:34,lineHeight:1.15,margin:"12px 0"}}>{t("hero")}</h1>
+   <p style={{color:"var(--mut)"}}>{t("heroSub")}</p>
+   <button className="p" onClick={()=>go("report")}>{t("reportBtn")}</button> <button onClick={()=>go("track")}>{t("trackBtn")}</button></div>
+   <div className="fake"><i style={{left:60,top:50,background:"#D32F2F"}}/><i style={{left:170,top:110,background:"#B45309"}}/><i style={{left:240,top:40,background:"#2E7D32"}}/></div></div>
+  <div className="grid" style={{marginBottom:14}}><Stat n={s&&s.total} l={t("total")}/><Stat n={s&&s.active} l={t("active")}/><Stat n={s&&s.resolved} l={t("resolved")}/><Stat n={s&&s.last24h} l={t("last24")}/></div>
+  <h3>{t("how")}</h3><div className="grid">{step("01","s1","s1d")}{step("02","s2","s2d")}{step("03","s3","s3d")}</div></div>;}
+
+function Report({tok}){
+ const [f,setF]=useState({description:"",severity:"Unknown",latitude:"",longitude:""});
+ const [img,setImg]=useState(null),[res,setRes]=useState(null),[err,setErr]=useState(""),[busy,setBusy]=useState(false);
+ const mapEl=useRef(),map=useRef(),mk=useRef();
+ const setPos=(la,lo)=>{setF(x=>({...x,latitude:la.toFixed(5),longitude:lo.toFixed(5)}));
+  if(mk.current)mk.current.setLatLng([la,lo]);else mk.current=L.marker([la,lo]).addTo(map.current);map.current.setView([la,lo],15);};
+ useEffect(()=>{map.current=L.map(mapEl.current).setView([12.9716,77.5946],11);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(map.current);
+  map.current.on("click",e=>setPos(e.latlng.lat,e.latlng.lng));return()=>map.current.remove()},[]);
+ const locate=()=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>setPos(p.coords.latitude,p.coords.longitude),
+  ()=>setErr("Location denied - click the map or type coordinates."),{enableHighAccuracy:true}):setErr("Geolocation unsupported.");
+ const submit=async()=>{setErr("");setRes(null);setBusy(true);
+  try{const fd=new FormData();Object.entries(f).forEach(([k,v])=>fd.append(k,v));fd.append("reported_at",new Date().toISOString());
+   if(img)fd.append("image",img);setRes(await api("/incidents",{method:"POST",body:fd},tok));}catch(e){setErr(e.message)}setBusy(false);};
+ return <div><div className="warn"><b>{t("emergency")}</b></div>
+  <div className="card"><h3>{t("reportBtn")}</h3>
+   <label>{t("description")}</label><textarea rows="3" value={f.description} onChange={e=>setF({...f,description:e.target.value})}/>
+   <label>{t("severity")}</label><select value={f.severity} onChange={e=>setF({...f,severity:e.target.value})}>{["Unknown","Minor","Serious","Critical"].map(s=><option key={s}>{s}</option>)}</select>
+   <button onClick={locate}>{t("useLoc")}</button> <small>{t("clickMap")}</small>
+   <div id="map" ref={mapEl} style={{marginTop:8}}/>
+   <div style={{display:"flex",gap:8}}><input placeholder="Latitude" value={f.latitude} onChange={e=>setF({...f,latitude:e.target.value})}/><input placeholder="Longitude" value={f.longitude} onChange={e=>setF({...f,longitude:e.target.value})}/></div>
+   <label>{t("photo")}</label><input type="file" accept="image/*" onChange={e=>setImg(e.target.files[0])}/>
+   {img&&<img src={URL.createObjectURL(img)} style={{maxWidth:200,display:"block",marginBottom:8,borderRadius:8}}/>}
+   {!tok&&<p><small>{t("loginHint")}</small></p>}
+   <button className="p" disabled={busy} onClick={submit}>{busy?"…":t("submit")}</button>{err&&<p className="err">{err}</p>}</div>
+  {res&&<div className="card"><h3 className="ok">{t("saved")}: {res.incident_id}</h3><p>{res.message}</p>
+   <p><b>AI:</b> {res.ai_prediction?`${res.ai_prediction} (${(res.ai_confidence*100).toFixed(0)}%) - preliminary, needs human verification.`:res.ai_note}</p>
+   <small>Test alert recorded; no real emergency service was contacted.</small></div>}</div>;}
+
+function Track(){
+ const [id,setId]=useState(""),[d,setD]=useState(null),[err,setErr]=useState("");
+ const go=async()=>{setErr("");setD(null);try{setD(await api("/incidents/"+id.trim().toUpperCase()))}catch(e){setErr(e.message)}};
+ return <div className="card"><h3>{t("trackTitle")}</h3><input placeholder="INC-1001" value={id} onChange={e=>setId(e.target.value)}/>
+  <button className="p" onClick={go}>{t("track")}</button>{err&&<p className="err">{err}</p>}
+  {d&&<div><p><b>{d.incident_id}</b> <span className="chip">{ts(d.status)}</span></p><p><small>{d.created_at} UTC</small></p>
+   <p><a href={osm(d.latitude,d.longitude)} target="_blank">{t("map")}</a></p>
+   <ul>{d.history.map((h,i)=><li key={i}>{ts(h.status)} - {h.changed_at}{h.by?" - "+h.by:""}</li>)}</ul></div>}</div>;}
+
+function MapView(){
+ const el=useRef(),[d,setD]=useState(null);
+ useEffect(()=>{api("/public/map").then(setD).catch(()=>setD({points:[],hotspots:[]}))},[]);
+ useEffect(()=>{if(!d)return;const m=L.map(el.current).setView([12.9716,77.5946],11);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(m);
+  d.hotspots.forEach(h=>L.circle([h.lat,h.lng],{radius:400+h.count*150,color:"#D32F2F",fillOpacity:.2}).bindPopup(`Hotspot: ${h.count}`).addTo(m));
+  const pts=(d.points||[]).filter(p=>p.status!=="Resolved");
+  pts.forEach(p=>L.circleMarker([p.lat,p.lng],{radius:7,color:COL[p.status]||"#555",fillOpacity:.9}).bindPopup(`${p.id} - ${ts(p.status)}`).addTo(m));
+  if(pts.length)m.fitBounds(pts.map(p=>[p.lat,p.lng]),{maxZoom:15,padding:[30,30]});return()=>m.remove()},[d]);
+ return <div><div className="card"><h3>{t("mapTitle")}</h3>
+  <div>{["Reported","Verified","Responding"].map(k=><span key={k} style={{marginRight:12}}><span style={{color:COL[k]}}>●</span> {ts(k)}</span>)}<span style={{color:"#D32F2F"}}>◯</span> Hotspot</div>
+  <div id="map" ref={el} style={{height:380,marginTop:8}}/><small>Locations are rounded for privacy. Hotspots: ~1 km areas with 2+ reports.</small></div>
+  <div className="card"><h3>Hotspots</h3>{d&&d.hotspots.length?<table><tbody>{d.hotspots.map((h,i)=><tr key={i}><td>{h.lat}, {h.lng}</td><td>{h.count}</td><td><a href={osm(h.lat,h.lng)} target="_blank">{t("map")}</a></td></tr>)}</tbody></table>:<p>{t("none")}</p>}</div></div>;}
+
+function Safety(){
+ return <div className="card"><h3>{t("safeTitle")}</h3><table><tbody><tr><td><b>112</b></td><td>India</td></tr><tr><td><b>108</b></td><td>Ambulance</td></tr><tr><td><b>100</b></td><td>Police</td></tr></tbody></table>
+  <ol>{["w1","w2","w3","w4","w5"].map(k=><li key={k} style={{margin:"8px 0"}}>{t(k)}</li>)}</ol>
+  <small>General guidance only; not a substitute for first-aid training. Numbers vary by country.</small></div>;}
+
+/* ---------- accounts ---------- */
+function MyReports({tok,out}){
+ const [rows,setRows]=useState(null),[err,setErr]=useState("");
+ useEffect(()=>{api("/my/incidents",{},tok).then(setRows).catch(e=>{setErr(e.message);if(/Login/.test(e.message))out()})},[]);
+ return <div className="card"><h3>{t("myReports")}</h3>{err&&<p className="err">{err}</p>}{rows&&!rows.length&&<p>{t("none")}</p>}
+  <table><tbody>{(rows||[]).map(r=><tr key={r.incident_id}><td>{r.incident_id}</td><td>{r.description.slice(0,50)}</td><td><span className="chip">{ts(r.status)}</span></td><td>{r.created_at.slice(0,10)}</td></tr>)}</tbody></table>
+  <button onClick={out} style={{marginTop:10}}>{t("logout")}</button></div>;}
+
+const LABEL={Verified:"Confirm report",Responding:"Responding / on the way",Resolved:"Mark resolved",Duplicate:"Mark duplicate",Rejected:"Reject"};
+function Card({r,tok,role,reload}){
+ const [note,setNote]=useState(""),[msg,setMsg]=useState(""),[al,setAl]=useState(null);
+ const call=async(p,m,b)=>{setMsg("");try{const x=await api(p,{method:m,headers:J,body:b?JSON.stringify(b):undefined},tok);reload();return x}catch(e){setMsg(e.message)}};
+ const set=async s=>{if(await call(`/incidents/${r.incident_id}/status`,"PATCH",{status:s,note}))setNote("")};
+ const alerts=async()=>setAl(await api(`/incidents/${r.incident_id}/notifications`,{},tok));
+ const retry=async()=>{await api(`/incidents/${r.incident_id}/notifications/retry`,{method:"POST"},tok);alerts()};
+ const sts=role==="admin"?["Verified","Responding","Resolved","Duplicate","Rejected"]:["Verified","Responding","Resolved"];
+ return <div className="card" style={{borderLeft:"6px solid "+(COL[r.status]||"#888")}}>
+  <div style={{display:"flex",gap:12}}>{r.image_path&&<Thumb id={r.incident_id} tok={tok}/>}<div style={{flex:1}}>
+   <b>{r.incident_id}</b> <span className="chip">{r.status}</span> {r.priority==="High"&&<span className="chip hi">PRIORITY</span>} <span className="chip">{r.severity}</span><br/>
+   {r.description}<br/><small>{r.created_at} UTC</small><br/>
+   <a href={`https://www.google.com/maps/dir/?api=1&destination=${r.latitude},${r.longitude}`} target="_blank">Get directions</a> | <a href={osm(r.latitude,r.longitude)} target="_blank">View on map</a></div></div>
+  {r.ai_prediction&&<p><small>AI (preliminary): {r.ai_prediction} {(r.ai_confidence*100).toFixed(0)}%</small> <button disabled={r.ai_feedback==="correct"} onClick={()=>call(`/incidents/${r.incident_id}/ai-feedback`,"POST",{correct:true})}>AI was right</button> <button disabled={r.ai_feedback==="wrong"} onClick={()=>call(`/incidents/${r.incident_id}/ai-feedback`,"POST",{correct:false})}>AI was wrong</button></p>}
+  <input placeholder="Optional note (e.g. ambulance dispatched)" value={note} onChange={e=>setNote(e.target.value)}/>
+  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{sts.map(s=><button key={s} className={r.status===s?"":"p"} disabled={r.status===s} onClick={()=>set(s)}>{LABEL[s]}</button>)}
+   {role==="admin"&&<button onClick={alerts}>Alerts</button>}</div>
+  {al&&<div><table><tbody>{al.map(n=><tr key={n.notification_id}><td>{n.recipient}</td><td className={n.delivery_status==="Sent"?"ok":"err"}>{n.delivery_status}</td><td>{n.created_at}</td></tr>)}</tbody></table><button onClick={retry}>Retry failed</button></div>}
+  {msg&&<p className="err">{msg}</p>}</div>;}
+
+function AddStaff({tok}){
+ const [f,setF]=useState({name:"",email:"",password:"",role:"police"}),[msg,setMsg]=useState("");
+ const go=async()=>{setMsg("");try{const r=await api("/admin/responders",{method:"POST",headers:J,body:JSON.stringify(f)},tok);setMsg(r.message);setF({...f,name:"",email:"",password:""})}catch(e){setMsg(e.message)}};
+ return <div className="card"><h3>Create police / hospital account</h3>
+  <select value={f.role} onChange={e=>setF({...f,role:e.target.value})}><option value="police">Police</option><option value="hospital">Hospital</option></select>
+  <input placeholder="Station or hospital name" value={f.name} onChange={e=>setF({...f,name:e.target.value})}/><input placeholder="Email" value={f.email} onChange={e=>setF({...f,email:e.target.value})}/>
+  <input type="password" placeholder="Password (8+ characters)" value={f.password} onChange={e=>setF({...f,password:e.target.value})}/>
+  <button className="p" onClick={go}>Create account</button>{msg&&<p>{msg}</p>}</div>;}
+
+function Console({tok,role,out}){
+ const [rows,setRows]=useState([]),[st,setSt]=useState({}),[m,setM]=useState(null),[show,setShow]=useState("active"),[q,setQ]=useState(""),[err,setErr]=useState("");
+ const load=async()=>{try{setRows(await api("/incidents",{},tok));setSt(await api("/stats",{},tok));setM(await api("/ai-metrics",{},tok))}catch(e){setErr(e.message);if(/Login/.test(e.message))out()}};
+ useEffect(()=>{load();const i=setInterval(load,10000);return()=>clearInterval(i)},[]);
+ const open=["Reported","Verified","Responding"],act=rows.filter(r=>open.includes(r.status));
+ const base=show==="active"?act:show==="done"?rows.filter(r=>!open.includes(r.status)):rows;
+ const list=base.filter(r=>(r.incident_id+" "+r.description).toLowerCase().includes(q.toLowerCase()));
+ const csv=async()=>{const r=await fetch("/api/export.csv",{headers:{Authorization:"Bearer "+tok}});if(!r.ok)return setErr("Export failed");
+  const u=URL.createObjectURL(await r.blob()),a=document.createElement("a");a.href=u;a.download="incidents.csv";a.click();URL.revokeObjectURL(u)};
+ return <div><div className="card"><h3>{role[0].toUpperCase()+role.slice(1)} console</h3><p>{act.length} active - {st.total||0} total. Refreshes every 10 seconds; priority cases first.</p>
+  {role==="admin"&&<div className="grid"><div><b>By status</b><Bars data={ALL.map(k=>({k,v:st[k]||0}))}/></div><div><b>Last 7 days</b><Bars data={(st.by_day||[]).map(d=>({k:d.day.slice(5),v:d.count}))}/></div></div>}
+  {m&&<p><b>AI accuracy (from staff reviews):</b> {m.reviewed?`${m.reviewed} reviewed - precision ${m.precision??"-"}, recall ${m.recall??"-"}, false-positive rate ${m.false_positive_rate??"-"}`:"no reviews yet - use the AI was right / wrong buttons"}</p>}
+  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{[["active","Active"],["done","Closed"],["all","All"]].map(([k,l])=><button key={k} className={show===k?"p":""} onClick={()=>setShow(k)}>{l}</button>)}
+   {role==="admin"&&<button onClick={csv}>Export CSV</button>}<button onClick={out}>{t("logout")}</button></div>
+  <input placeholder="Search by ID or description" value={q} onChange={e=>setQ(e.target.value)} style={{marginTop:10}}/>{err&&<p className="err">{err}</p>}</div>
+  {role==="admin"&&<AddStaff tok={tok}/>}
+  {list.map(r=><Card key={r.incident_id} r={r} tok={tok} role={role} reload={load}/>)}{!list.length&&<p>{t("none")}</p>}</div>;}
+
+function Account({auth,setAuth}){
+ const [mode,setMode]=useState("signin"),[f,setF]=useState({name:"",email:"",password:"",confirm:""}),[err,setErr]=useState("");
+ const submit=async()=>{setErr("");
+  if(mode==="signup"){
+   if(f.password!==f.confirm)return setErr(t("pwMismatch"));
+   if(f.password.length<8)return setErr(t("password")+" must be at least 8 characters");
+  }
+  try{
+   if(mode==="signup")await api("/auth/register",{method:"POST",headers:J,body:JSON.stringify({name:f.name,email:f.email,password:f.password})});
+   const r=await api("/auth/login",{method:"POST",headers:J,body:JSON.stringify({email:f.email,password:f.password})});
+   setAuth({tok:r.token,role:r.role,name:r.name});
+  }catch(e){setErr(e.message)}};
+ const out=()=>setAuth({tok:"",role:"",name:""});
+ if(!auth.tok)return <div style={{display:"flex",justifyContent:"center",padding:"36px 0 20px",width:"100%"}}>
+  <div className="card" style={{maxWidth:420,width:"100%",boxSizing:"border-box"}}>
+   <div style={{display:"flex",gap:8,marginBottom:16}}>
+    <button style={{flex:1}} className={mode==="signin"?"p":""} onClick={()=>{setMode("signin");setErr("");}}>{t("signin")}</button>
+    <button style={{flex:1}} className={mode==="signup"?"p":""} onClick={()=>{setMode("signup");setErr("");}}>{t("signup")}</button>
+   </div>
+   <h3 style={{textAlign:"center",marginBottom:16}}>{t(mode)}</h3>
+   {mode==="signup"&&<input placeholder={t("name")} value={f.name} onChange={e=>setF({...f,name:e.target.value})}/>}
+   <input placeholder={t("email")} value={f.email} onChange={e=>setF({...f,email:e.target.value})}/>
+   <input type="password" placeholder={t("password")} value={f.password} onChange={e=>setF({...f,password:e.target.value})}/>
+   {mode==="signup"&&<input type="password" placeholder={t("confirmPassword")} value={f.confirm} onChange={e=>setF({...f,confirm:e.target.value})}/>}
+   <button className="p" style={{width:"100%",marginTop:4}} onClick={submit}>{t(mode)}</button>
+   {err&&<p className="err">{err}</p>}
+   <p style={{marginTop:12}}><small>{mode==="signin"?t("signinNote"):t("signupNote")}</small></p>
+  </div></div>;
+ return auth.role==="citizen"?<MyReports tok={auth.tok} out={out}/>:<Console tok={auth.tok} role={auth.role} out={out}/>;}
+
+function App(){
+ const [tab,setTab]=useState("home");
+ const [lang,setLang]=useState(()=>{try{return localStorage.getItem("lang")||"en"}catch(e){return"en"}});
+ const [auth,setAuthS]=useState(()=>{try{return JSON.parse(sessionStorage.getItem("auth"))||{tok:"",role:"",name:""}}catch(e){return{tok:"",role:"",name:""}}});
+ LANG=lang;
+ const setAuth=a=>{setAuthS(a);try{sessionStorage.setItem("auth",JSON.stringify(a))}catch(e){}};
+ const chLang=l=>{setLang(l);try{localStorage.setItem("lang",l)}catch(e){}};
+ useEffect(()=>{
+  if(auth.tok){
+   api("/auth/me",{},auth.tok).then(me=>setAuth({tok:auth.tok,role:me.role,name:me.name}))
+    .catch(()=>setAuth({tok:"",role:"",name:""}));
+  }
+ },[]);
+ return <div><header><span className="brand">RoadAlert</span>
+  <nav>{["home","report","track","map","safety","account"].map(k=><button key={k} className={tab===k?"on":""} onClick={()=>setTab(k)}>{t(k)}</button>)}
+   <select value={lang} onChange={e=>chLang(e.target.value)}><option value="en">English</option><option value="hi">हिन्दी</option><option value="kn">ಕನ್ನಡ</option></select></nav></header>
+  <main>{tab==="home"&&<Home go={setTab}/>}{tab==="report"&&<Report tok={auth.tok}/>}{tab==="track"&&<Track/>}{tab==="map"&&<MapView/>}{tab==="safety"&&<Safety/>}{tab==="account"&&<Account auth={auth} setAuth={setAuth}/>}</main></div>;}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script></body></html>

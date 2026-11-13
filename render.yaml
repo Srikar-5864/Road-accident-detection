@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: road-accident-reporting
+    runtime: docker
+    plan: free
+    envVars:
+      - key: PRODUCTION
+        value: "1"
+      - key: ADMIN_PASSWORD
+        generateValue: true
